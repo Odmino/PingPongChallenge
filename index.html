@@ -19,46 +19,68 @@
     <button id="startBtn">ГОТОВ К УДАРУ</button>
 
     <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const roomId = urlParams.get('room');
-        const statusEl = document.getElementById('status');
-        const startBtn = document.getElementById('startBtn');
+const urlParams = new URLSearchParams(window.location.search);
+const roomId = urlParams.get('room');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
 
-        let peer = null;
-        let conn = null;
-        let isSensorActive = false;
+let peer = null;
+let conn = null;
 
-        if (!roomId) {
-            statusEl.innerText = "Ошибка: ID комнаты не указан в URL!";
+if (!roomId) {
+    statusEl.innerText = "Ошибка: ID комнаты не указан в URL!";
+} else {
+    initPeer();
+}
+
+function initPeer() {
+    // Настройка подключения к публичному PeerServer с бесплатным STUN Google
+    peer = new Peer({
+        host: '0.peerjs.com',
+        port: 443,
+        path: '/',
+        secure: true,
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        }
+    });
+
+    // ВАЖНО: Подключаемся к Unity ТОЛЬКО после того, как наш собственный Peer успешно открылся!
+    peer.on('open', (myId) => {
+        statusEl.innerText = "Подключение к Unity (" + roomId + ")...";
+
+        // Соединяемся с комнатным ID Unity
+        conn = peer.connect(roomId, { 
+            reliable: false // Режим UDP для минимального пинга
+        });
+
+        conn.on('open', () => {
+            statusEl.innerText = "ПОДКЛЮЧЕНО ПРЯМО К UNITY!";
+            statusEl.style.color = "#28a745";
+        });
+
+        conn.on('close', () => {
+            statusEl.innerText = "Соединение с Unity закрыто";
+            statusEl.style.color = "#dc3545";
+        });
+
+        conn.on('error', (err) => {
+            statusEl.innerText = "Ошибка канала: " + err;
+        });
+    });
+
+    peer.on('error', (err) => {
+        console.error("PeerJS error:", err);
+        if (err.type === 'peer-unavailable') {
+            statusEl.innerText = "Ошибка: Комната Unity не найдена! Проверьте, запущен ли WebGL и тот ли ID.";
         } else {
-            initPeer();
+            statusEl.innerText = "Ошибка PeerJS: " + err.type + " (" + err.message + ")";
         }
-
-        function initPeer() {
-            // Создаем Peer с автосгенерированным ID
-            peer = new Peer();
-
-            peer.on('open', (id) => {
-                statusEl.innerText = "Подключение к ПК...";
-                // Подключаемся к Unity по ID комнаты из QR-кода
-                conn = peer.connect(roomId, { reliable: false }); // reliable: false = режим UDP (минимальный лаг)
-
-                conn.on('open', () => {
-                    statusEl.innerText = "ПОДКЛЮЧЕНО ПРЯМО К UNITY (WebRTC)!";
-                    statusEl.style.color = "#28a745";
-                });
-
-                conn.on('close', () => {
-                    statusEl.innerText = "Соединение закрыто";
-                    statusEl.style.color = "#dc3545";
-                });
-            });
-
-            peer.on('error', (err) => {
-                statusEl.innerText = "Ошибка PeerJS: " + err.type;
-            });
-        }
-
+    });
+}
         // Активация датчиков
         startBtn.addEventListener('click', async () => {
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {

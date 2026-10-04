@@ -34,28 +34,25 @@ if (!roomId) {
 }
 
 function initPeer() {
-    // Настройка подключения к публичному PeerServer с бесплатным STUN Google
-peer = new Peer({
-    host: 'metered.ca',
-    port: 443,
-    path: '/peerjs',
-    secure: true,
-    config: {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-    }
-});
+    peer = new Peer({
+        host: '0.peerjs.com',
+        port: 443,
+        path: '/',
+        secure: true,
+        key: 'peerjs',
+        debug: 2,
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        }
+    });
 
-    // ВАЖНО: Подключаемся к Unity ТОЛЬКО после того, как наш собственный Peer успешно открылся!
-    peer.on('open', (myId) => {
+    peer.on('open', (id) => {
         statusEl.innerText = "Подключение к Unity (" + roomId + ")...";
-
-        // Соединяемся с комнатным ID Unity
-        conn = peer.connect(roomId, { 
-            reliable: false // Режим UDP для минимального пинга
-        });
+        
+        conn = peer.connect(roomId, { reliable: false });
 
         conn.on('open', () => {
             statusEl.innerText = "ПОДКЛЮЧЕНО ПРЯМО К UNITY!";
@@ -63,22 +60,14 @@ peer = new Peer({
         });
 
         conn.on('close', () => {
-            statusEl.innerText = "Соединение с Unity закрыто";
+            statusEl.innerText = "Соединение закрыто";
             statusEl.style.color = "#dc3545";
-        });
-
-        conn.on('error', (err) => {
-            statusEl.innerText = "Ошибка канала: " + err;
         });
     });
 
     peer.on('error', (err) => {
         console.error("PeerJS error:", err);
-        if (err.type === 'peer-unavailable') {
-            statusEl.innerText = "Ошибка: Комната Unity не найдена! Проверьте, запущен ли WebGL и тот ли ID.";
-        } else {
-            statusEl.innerText = "Ошибка PeerJS: " + err.type + " (" + err.message + ")";
-        }
+        statusEl.innerText = "Ошибка PeerJS: " + err.type;
     });
 }
         // Активация датчиков

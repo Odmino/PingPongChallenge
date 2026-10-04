@@ -36,7 +36,7 @@ if (!roomId) {
 function initPeer() {
     // Настройка подключения к публичному PeerServer с бесплатным STUN Google
     peer = new Peer({
-        host: '0.peerjs.com',
+        host: 'peerjs-server.herokuapp.com',
         port: 443,
         path: '/',
         secure: true,

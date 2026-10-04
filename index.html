@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Пинг-Понг Контроллер</title>
-    <!-- Подключаем PeerJS -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { font-family: sans-serif; background: #111; color: #fff; text-align: center; padding: 20px; user-select: none; }
@@ -15,62 +14,67 @@
 </head>
 <body>
     <h2>Ракетка</h2>
-    <div id="status" class="status">Получение ID комнаты...</div>
+    <div id="status" class="status">Подключение к серверу...</div>
     <button id="startBtn">ГОТОВ К УДАРУ</button>
 
     <script>
-const urlParams = new URLSearchParams(window.location.search);
-const roomId = urlParams.get('room');
-const statusEl = document.getElementById('status');
-const startBtn = document.getElementById('startBtn');
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomId = urlParams.get('room');
+        const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
 
-let peer = null;
-let conn = null;
+        let peer = null;
+        let conn = null;
+        let isSensorActive = false;
 
-if (!roomId) {
-    statusEl.innerText = "Ошибка: ID комнаты не указан в URL!";
-} else {
-    initPeer();
-}
-
-function initPeer() {
-    peer = new Peer({
-        host: '0.peerjs.com',
-        port: 443,
-        path: '/',
-        secure: true,
-        key: 'peerjs',
-        debug: 2,
-        config: {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+        if (!roomId) {
+            statusEl.innerText = "Ошибка: ID комнаты не указан в URL!";
+        } else {
+            initPeer();
         }
-    });
 
-    peer.on('open', (id) => {
-        statusEl.innerText = "Подключение к Unity (" + roomId + ")...";
-        
-        conn = peer.connect(roomId, { reliable: false });
+        function initPeer() {
+            // Подключаемся к твоему локальному сигнальному серверу
+            peer = new Peer({
+                host: '192.168.99.12',
+                port: 9001,
+                path: '/',
+                secure: false,
+                debug: 2
+            });
 
-        conn.on('open', () => {
-            statusEl.innerText = "ПОДКЛЮЧЕНО ПРЯМО К UNITY!";
-            statusEl.style.color = "#28a745";
-        });
+            peer.on('open', (myId) => {
+                statusEl.innerText = "Поиск комнаты Unity (" + roomId + ")...";
 
-        conn.on('close', () => {
-            statusEl.innerText = "Соединение закрыто";
-            statusEl.style.color = "#dc3545";
-        });
-    });
+                // Устанавливаем прямое UDP WebRTC соединение с Unity
+                conn = peer.connect(roomId, { reliable: false });
 
-    peer.on('error', (err) => {
-        console.error("PeerJS error:", err);
-        statusEl.innerText = "Ошибка PeerJS: " + err.type;
-    });
-}
-        // Активация датчиков
+                conn.on('open', () => {
+                    statusEl.innerText = "ПОДКЛЮЧЕНО К UNITY!";
+                    statusEl.style.color = "#28a745";
+                });
+
+                conn.on('close', () => {
+                    statusEl.innerText = "Соединение с Unity закрыто";
+                    statusEl.style.color = "#dc3545";
+                });
+
+                conn.on('error', (err) => {
+                    statusEl.innerText = "Ошибка соединения: " + err;
+                });
+            });
+
+            peer.on('error', (err) => {
+                console.error("PeerJS error:", err);
+                if (err.type === 'peer-unavailable') {
+                    statusEl.innerText = "Ошибка: Комната Unity не найдена!";
+                } else {
+                    statusEl.innerText = "Ошибка сервера: " + err.type;
+                }
+            });
+        }
+
+        // Активация датчиков движения
         startBtn.addEventListener('click', async () => {
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
@@ -102,12 +106,10 @@ function initPeer() {
                 const acc = e.accelerationIncludingGravity || e.acceleration;
                 if (!acc) return;
 
-                // Считаем силу ускорения (вектор G)
                 const force = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-
-                // Если произошло резкое движение (порог подбирается экспериментально, например > 25)
                 const now = Date.now();
-                if (force > 25 && (now - lastSwingTime) > 300) { // кулдаун 300мс
+
+                if (force > 25 && (now - lastSwingTime) > 300) {
                     lastSwingTime = now;
 
                     const swingPayload = {

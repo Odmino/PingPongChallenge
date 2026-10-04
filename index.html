@@ -1,0 +1,117 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Пинг-Понг Контроллер</title>
+    <!-- Подключаем PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #111; color: #fff; text-align: center; padding: 20px; user-select: none; }
+        .status { margin: 20px 0; padding: 10px; border-radius: 8px; background: #222; font-size: 14px; }
+        button { padding: 20px 40px; font-size: 20px; border-radius: 12px; border: none; background: #28a745; color: white; width: 100%; max-width: 300px; font-weight: bold; }
+        .active { background: #17a2b8 !important; }
+    </style>
+</head>
+<body>
+    <h2>Ракетка</h2>
+    <div id="status" class="status">Получение ID комнаты...</div>
+    <button id="startBtn">ГОТОВ К УДАРУ</button>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomId = urlParams.get('room');
+        const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+
+        let peer = null;
+        let conn = null;
+        let isSensorActive = false;
+
+        if (!roomId) {
+            statusEl.innerText = "Ошибка: ID комнаты не указан в URL!";
+        } else {
+            initPeer();
+        }
+
+        function initPeer() {
+            // Создаем Peer с автосгенерированным ID
+            peer = new Peer();
+
+            peer.on('open', (id) => {
+                statusEl.innerText = "Подключение к ПК...";
+                // Подключаемся к Unity по ID комнаты из QR-кода
+                conn = peer.connect(roomId, { reliable: false }); // reliable: false = режим UDP (минимальный лаг)
+
+                conn.on('open', () => {
+                    statusEl.innerText = "ПОДКЛЮЧЕНО ПРЯМО К UNITY (WebRTC)!";
+                    statusEl.style.color = "#28a745";
+                });
+
+                conn.on('close', () => {
+                    statusEl.innerText = "Соединение закрыто";
+                    statusEl.style.color = "#dc3545";
+                });
+            });
+
+            peer.on('error', (err) => {
+                statusEl.innerText = "Ошибка PeerJS: " + err.type;
+            });
+        }
+
+        // Активация датчиков
+        startBtn.addEventListener('click', async () => {
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                try {
+                    const res = await DeviceMotionEvent.requestPermission();
+                    if (res === 'granted') startTracking();
+                } catch (e) { alert(e); }
+            } else {
+                startTracking();
+            }
+        });
+
+        let lastSwingTime = 0;
+
+        function startTracking() {
+            if (isSensorActive) return;
+            isSensorActive = true;
+            startBtn.classList.add('active');
+            startBtn.innerText = "ОТСЛЕЖИВАНИЕ...";
+
+            let gyro = { alpha: 0, beta: 0, gamma: 0 };
+
+            window.addEventListener('deviceorientation', (e) => {
+                gyro.alpha = e.alpha || 0;
+                gyro.beta = e.beta || 0;
+                gyro.gamma = e.gamma || 0;
+            });
+
+            window.addEventListener('devicemotion', (e) => {
+                const acc = e.accelerationIncludingGravity || e.acceleration;
+                if (!acc) return;
+
+                // Считаем силу ускорения (вектор G)
+                const force = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+
+                // Если произошло резкое движение (порог подбирается экспериментально, например > 25)
+                const now = Date.now();
+                if (force > 25 && (now - lastSwingTime) > 300) { // кулдаун 300мс
+                    lastSwingTime = now;
+
+                    const swingPayload = {
+                        event: "SWING",
+                        force: parseFloat(force.toFixed(2)),
+                        accel: { x: acc.x.toFixed(2), y: acc.y.toFixed(2), z: acc.z.toFixed(2) },
+                        gyro: { a: gyro.alpha.toFixed(1), b: gyro.beta.toFixed(1), g: gyro.gamma.toFixed(1) }
+                    };
+
+                    if (conn && conn.open) {
+                        conn.send(JSON.stringify(swingPayload));
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
